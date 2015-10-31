@@ -1,5 +1,4 @@
 #define MAX_PEERS 15
-#define PORT 6346
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +10,6 @@
 #include <arpa/inet.h> //inet_addr
 #include "p2p.h"
 
-
 void peer_handler (int peer_sock);
 int connect_peer (char *ip_address, int port);
 void handle_ping(int peer_sock, char *buffer);
@@ -19,12 +17,15 @@ void handle_join(int peer_sock, char *buffer);
 char * get_my_ip ();
 void get_sock_ip (int sock, char *ip);
 uint32_t get_message_id();
+void send_query(char *query);
+void handle_qhit(int peer_sock, char *buffer);
 
 char *own_ip;
 int peer_socks[MAX_PEERS] = {0};
 
 FILE *log_file;
- 
+int PORT;
+
 int main(int argc , char *argv[])
 {
 	struct in_addr addr;
@@ -44,6 +45,17 @@ int main(int argc , char *argv[])
 	/* Socket set to handle multiple sockets*/
 	fd_set readfds;
 /*--------------------------------------------------*/
+
+	//initialize port variable to first argument
+	if (argc == 2)
+	{
+		PORT = atoi(argv[1]);
+	}
+	else 
+	{
+		printf ("Please specify port \n");
+		exit (-1);
+	}
 
 	remove ("log.txt");
 	
@@ -81,7 +93,7 @@ int main(int argc , char *argv[])
 	
 	//now connect to one peer
 	
-	peer_socks[0] = connect_peer ("130.233.195.30", 6346);
+	//peer_socks[0] = connect_peer ("130.233.195.30", 6346);
 	
 	//loop indifinitely thru all sockets
 	while (1)
@@ -158,6 +170,7 @@ int main(int argc , char *argv[])
 		{
 			int len;
 			char command[80];
+			char delim[2] = " ";
 			
 			char *cmd, *arg1, *arg2;
 			
@@ -167,41 +180,98 @@ int main(int argc , char *argv[])
 				strncpy (command, user_input_buff, strlen (user_input_buff) + 1);
 				char ip_str[16];
 				
-				cmd = strtok (command, " ");
+				if (strlen(command) != 0)
+				{
 				
-				if (strcmp (cmd, "exit") == 0)
-				{
-					exit (0);
-				}
-				else if (strcmp (cmd, "peers") == 0) 
-				{
-					printf ("Listing all connected peers\n");
-					for (i = 0; i < MAX_PEERS; i++)
+					cmd = strtok (command, delim);
+		/* COMMAND TO BE PROCESSED*/			
+					if (strcmp (cmd, "exit") == 0)
 					{
-						if (peer_socks[i] > 0)
+						exit (0);
+					}
+	
+					// peers
+					else if (strcmp (cmd, "peers") == 0) 
+					{
+						int is_present = 0;
+						for (i = 0; i < MAX_PEERS; i++)
 						{
-							get_sock_ip (peer_socks[i], ip_str);
-							printf ("%s\n", ip_str);
+							if (peer_socks[i] > 0)
+							{
+								get_sock_ip (peer_socks[i], ip_str);
+								printf ("%s\n", ip_str);
+								is_present = 1;
+							}
+						}
+						
+						if (is_present == 0)
+						{
+							printf ("No peers connected\n");
 						}
 					}
-				}
-				else if (strcmp (cmd, "query") == 0)
-				{
-					arg1 = strtok(NULL, " "); //ip address
-					printf ("You want to query %s", arg1);
-				}
+
+					//query ip_addr
+					else if (strcmp (cmd, "query") == 0)
+					{
+						arg1 = strtok(NULL, delim); //query string
+						send_query(arg1);
+					}
 				
 
-				/*
-				 while( token != NULL ) 
-				   {
-				      printf( "%s\n", token );
-				    
-				      token = strtok(NULL, " ");
+					else if (strcmp (cmd, "connect") == 0)
+					{
+						//printf ("Command - %s\n", cmd);
+						arg1 = strtok (NULL, " "); //IP_ADDRESS of peer to be connected
+						if (arg1 != NULL) 
+						{
+						//	printf ("Command - %s\n", arg1);
+						
+							arg2 = strtok (NULL, " ");
+							if (arg2 != NULL) 
+							{
+									int sock;
+									sock = connect_peer(arg1, atoi(arg2));
+									
+									if (sock > 0)
+									{
+										//add to socket list
+										for (i = 0; i < MAX_PEERS; i++)
+										{
+											if (peer_socks[i] == 0)
+											{
+												peer_socks[i] = sock;
+												break;	
+											}
+										}
+									}							
+							}
+							else
+							{
+								printf ("Specify port number. Format - connect ip_address port\n");
+							}
+						}
+						else
+						{
+							printf ("Specify ip address. Format - connect ip_address port\n");
+						}
+					}
+					
+					else 
+					{
+						printf ("Unknown command\n");
+					}
+				
+
+					/*
+					 while( token != NULL ) 
+					   {
+					      printf( "%s\n", token );
+					    
+					      token = strtok(NULL, " ");
+					   }
+					   
+					   */
 				   }
-				   
-				   */
-				   
 				
 			}
 		}
@@ -253,7 +323,7 @@ int connect_peer (char *ip_address, int port)
 	msg_join_send.msg_id = htonl(hash);
 
 	//Create socket
-	sock_peer = socket(AF_INET , SOCK_STREAM , 0);
+	sock_peer = socket(AF_INET, SOCK_STREAM, 0);
 	if (sock_peer == -1)
 	{
 		perror("Could not create socket: ");
@@ -293,10 +363,10 @@ int connect_peer (char *ip_address, int port)
 	//msg_join_recv_head = *((struct P2P_h *) buffer);
 	//msg_join_recv_body = *((struct P2P_join *) (buffer + sizeof(struct P2P_h)));
 	
-	//writing header to buffer
+	//writing buffer to header
 	memcpy(&msg_join_recv_head, buffer, HLEN);
 	
-	//writing body to buffer
+	//writing buffer to body
 	memcpy(&msg_join_recv_body, buffer+HLEN, JOINLEN);
 	
 	/*
@@ -369,8 +439,9 @@ void peer_handler (int peer_sock)
 				handle_join (peer_sock, buffer);
 				break;
 				
-			case MSG_QUERY:
-				//handle_query(peer_sock, buffer);
+			case MSG_QHIT:
+				handle_qhit(peer_sock, buffer);
+				break;
 			
 			default:
 				puts ("Unknown");
@@ -380,7 +451,16 @@ void peer_handler (int peer_sock)
 	else 
 	{
 		getpeername(peer_sock, (struct sockaddr*)&peer_addr , (socklen_t*)&addrlen);
-                printf("%s disconnected, port %d \n" , inet_ntoa(peer_addr.sin_addr) , ntohs(peer_addr.sin_port));
+                printf("Peer disconnected! ip - %s\n" , inet_ntoa(peer_addr.sin_addr));
+                
+                int i;
+                for (i = 0; i < MAX_PEERS; i++) 
+                {
+                	if (peer_socks[i] == peer_sock)
+                	{
+                		peer_socks[i] = 0;
+                	}
+                }
 	}
 }
 
@@ -451,6 +531,7 @@ char * get_my_ip ()
 
 void handle_ping(int peer_sock, char *buffer)
 {
+
 	struct in_addr addr;
 	
 	//structure for message header
@@ -514,10 +595,12 @@ void handle_join(int peer_sock, char *buffer)
 	struct P2P_h msg_resp_head;
 	struct P2P_join msg_resp_body;
 	
-	printf("<-- JOIN request (msg id: %u) from from %s\n", msg_req_head.msg_id, inet_ntoa(addr));
-	
 	//getting the request data from buffer
 	msg_req_head = *((struct P2P_h *) buffer);
+	
+	addr.s_addr = (uint32_t) msg_req_head.org_ip;
+	
+	fprintf(log_file, "<-- JOIN request (msg id: %u) from %s\n", msg_req_head.msg_id, inet_ntoa(addr));
 	
 	//log that ping received from a peer
 	addr.s_addr = (uint32_t) msg_req_head.org_ip;
@@ -527,7 +610,7 @@ void handle_join(int peer_sock, char *buffer)
 	msg_resp_head.ttl = 1;
 	msg_resp_head.msg_type = MSG_JOIN;
 	msg_resp_head.reserved = 0;
-	msg_resp_head.org_port = htons(6346);
+	msg_resp_head.org_port = htons(PORT);
 	msg_resp_head.length = htons(2);
 	msg_resp_head.org_ip = inet_addr(own_ip);
 	msg_resp_head.msg_id = msg_req_head.msg_id;
@@ -541,18 +624,122 @@ void handle_join(int peer_sock, char *buffer)
 	//writing body to buffer
 	memcpy(buff_send+HLEN, &msg_resp_body, JOINLEN);
 	
-	if(send(peer_sock , (void *) &buff_send , HLEN+JOINLEN, 0) < 0)
+	//recently changed
+	if(send(peer_sock , (void *) buff_send , HLEN+JOINLEN, 0) < 0)
 	{
 		perror("Failed to send: ");
 		exit(-1);
 	}
 	else
-		printf("--> JOIN request (msg id: %u) ACCEPTED for %s\n", msg_req_head.msg_id, inet_ntoa(addr));
+	{
+		fprintf(log_file, "--> JOIN request (msg id: %u) ACCEPTED for %s\n", msg_req_head.msg_id, inet_ntoa(addr));
+		printf ("Peer connected! ip - %s \n", inet_ntoa(addr));
+	}
 }
 
+void send_query(char *query) 
+{
+	int i;
+	char ip[16];
+	
+	char buffer_out[1024];
+	
+	struct P2P_h msg_head;	
+	
+	int querylen = strlen(query) + 1;  //plus 1 for null termiate char
+	
+	int flag_sent = 0;
+	
+	msg_head.version = P_VERSION;
+	msg_head.ttl = 5; //hop for 5 nodes (to search for query). Traverse highest possible nodes
+	msg_head.msg_type = MSG_QUERY;
+	msg_head.reserved = 0;
+	msg_head.org_port = htons(PORT);
+	msg_head.length = htons((uint16_t) querylen);
+	msg_head.org_ip = inet_addr(own_ip);
+	
+	msg_head.msg_id = htonl (get_message_id());
+	
+	//writing header to buffer
+	memcpy(buffer_out, &msg_head, HLEN);
+	
+	//writing body to buffer
+	memcpy(buffer_out+HLEN, query, querylen);
+	
+	for (i= 0; i < MAX_PEERS; i++)
+	{
+		if (peer_socks[i] != 0)
+		{
+			if (send(peer_socks[i], (void *) buffer_out, HLEN+querylen, 0) < 0)
+			{
+				perror ("Failed to send");
+			}
+			else
+			{
+				//query has been sent.. set the flag
+				flag_sent = 1;
+				
+				//log
+				get_sock_ip (peer_socks[i], ip);			
+				fprintf (log_file, "--> QUERY %s to ip - %s\n", query, ip);
+			}
+		}
+	}
+	
+	if (flag_sent == 0)
+	{
+		printf ("Query not sent. You are not connected to any node\n");
+	}
 
+}
 
-
+void handle_qhit(int peer_sock, char *buffer)
+{
+	int i;
+	char ip[16];
+	
+	struct in_addr addr;
+	
+	//structure for message header
+	struct P2P_h msg_head;
+	
+	//structure for resourse entries in the body
+	struct P2P_qhit_resource msg_body_res;
+	
+	char *ptr_res_entry;
+	
+	//defining the entry size (first two bytes in the body) 
+	uint16_t entry_size;
+	
+	//copy the header from buffer
+	memcpy (&msg_head, buffer, HLEN);
+	
+	//copy the first two bytes of body into entry_size
+	memcpy (&entry_size, buffer+HLEN, 2);
+	
+	//converting entry size to host byte order
+	entry_size = ntohs (entry_size);
+		
+	//skip first 4 bytes of the body (because we already got entry_size)
+	//copy first block of 8 bytes into resource structure
+	ptr_res_entry = buffer+HLEN+4;
+	memcpy (&msg_body_res, ptr_res_entry, 8);
+	
+	addr.s_addr = (uint32_t) msg_head.org_ip;
+	
+	printf ("\nQuery Hit from ip - %s, Number of entries: %u\n", inet_ntoa (addr), entry_size);
+	fprintf ("<-- QHIT from ip - %s, Number of entries: %u\n", inet_ntoa (addr), entry_size);
+	for (i = 1; i <= entry_size; i++) //loop thru other resources in the list
+	{
+		printf ("Resource ID: %u, Value: 0x%X\n", ntohs ((uint16_t)msg_body_res.id), ntohl (msg_body_res.value));
+		
+		//now copy the next entry
+		ptr_res_entry = ptr_res_entry + sizeof (struct P2P_qhit_resource);
+		memcpy (&msg_body_res, ptr_res_entry, 8);
+	}
+	
+	
+}
 
 
 
