@@ -80,5 +80,9 @@ struct P2P_qhit_resource {
     uint32_t value;
 };
 
+#define NUM_KEYS 3
+char *keys[] = {"commonkey", "group20key", "lostkey"};
+int keyvalues[] = {0x110A5150, 0x20, 0x666};
+
 #endif
 

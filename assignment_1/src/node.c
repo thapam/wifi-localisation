@@ -19,6 +19,7 @@ void get_sock_ip (int sock, char *ip);
 uint32_t get_message_id();
 void send_query(char *query);
 void handle_qhit(int peer_sock, char *buffer);
+void handle_query(int peer_sock, char *buffer);
 
 char *own_ip;
 int peer_socks[MAX_PEERS] = {0};
@@ -442,6 +443,10 @@ void peer_handler (int peer_sock)
 			case MSG_QHIT:
 				handle_qhit(peer_sock, buffer);
 				break;
+				
+			case MSG_QUERY:
+				handle_query(peer_sock, buffer);				
+				break;
 			
 			default:
 				puts ("Unknown");
@@ -728,7 +733,10 @@ void handle_qhit(int peer_sock, char *buffer)
 	addr.s_addr = (uint32_t) msg_head.org_ip;
 	
 	printf ("\nQuery Hit from ip - %s, Number of entries: %u\n", inet_ntoa (addr), entry_size);
-	fprintf ("<-- QHIT from ip - %s, Number of entries: %u\n", inet_ntoa (addr), entry_size);
+	
+	//log to file
+	fprintf (log_file, "<-- QHIT from ip - %s, Number of entries: %u\n", inet_ntoa (addr), entry_size);
+	
 	for (i = 1; i <= entry_size; i++) //loop thru other resources in the list
 	{
 		printf ("Resource ID: %u, Value: 0x%X\n", ntohs ((uint16_t)msg_body_res.id), ntohl (msg_body_res.value));
@@ -737,7 +745,109 @@ void handle_qhit(int peer_sock, char *buffer)
 		ptr_res_entry = ptr_res_entry + sizeof (struct P2P_qhit_resource);
 		memcpy (&msg_body_res, ptr_res_entry, 8);
 	}
+	printf ("\n"); 
 	
+	
+}
+
+void handle_query(int peer_sock, char *buffer) 
+{
+	int i;
+	struct in_addr addr;
+	
+	int flag_found = 0;
+	
+	uint16_t sbz = 0; //should be zero
+	
+	char key_input[1024];
+	char ip[16]; 
+	
+	uint32_t keyvalue;
+	
+	int payloadlength;
+	uint16_t resource_id = htons (1); //hard coded res id as 1
+	
+	char buffer_out[1024]; //output buffer for QHIT HEADER+BODY
+  	
+	//structure for query message header
+	struct P2P_h msg_query_head;
+	
+	//structure for qhit message header	
+	struct P2P_h msg_qhit_head;
+	
+	//structure for resourse entries in the body
+	struct P2P_qhit_resource msg_body_res;
+	
+	uint16_t entry_size;
+	
+	msg_query_head = *((struct P2P_h *) buffer);
+	
+	//get address field of message
+	addr.s_addr = (uint32_t) msg_query_head.org_ip;
+		
+	//decrement the TTL - TO-DO
+	
+	//copy the body (query key) into key_input
+	strcpy(key_input, buffer+HLEN);
+	
+	//log to file that Query received
+	get_sock_ip (peer_sock, ip);
+	fprintf (log_file, "<-- QUERY %s from %s\n", key_input, ip);
+	
+	for (i = 0; i < NUM_KEYS; i++)
+	{
+		if (strcmp (key_input, keys[i]) == 0) 
+		{
+			msg_qhit_head.version = P_VERSION;
+			msg_qhit_head.ttl = 5; //ttl should be 5 for qhit
+			msg_qhit_head.msg_type = MSG_QHIT;
+			msg_qhit_head.reserved = 0;
+			msg_qhit_head.org_port = htons(PORT);
+			msg_qhit_head.org_ip = inet_addr(own_ip);
+			msg_qhit_head.msg_id = msg_query_head.msg_id;	
+			
+			payloadlength = 12; //for now 12 since we are only considering single resource for a key
+			msg_qhit_head.length = htons((uint16_t) payloadlength);
+			
+			entry_size = htons (1); //only 1 entry (no multiple resources supported
+			
+			keyvalue = htonl (keyvalues[i]);
+			
+			//copy header into buffer
+			memcpy (buffer_out, &msg_qhit_head, HLEN);
+			
+			//copy entry size into first two bytes after header
+			memcpy (buffer_out+HLEN, &entry_size, 2);
+			
+			//append zeros for next two bytes
+			memcpy (buffer_out+HLEN+2, &sbz, 2);
+			
+			//appdned resource ID for next two bytes
+			memcpy (buffer_out+HLEN+2+2, &resource_id, 2);
+			
+			//append zeros for next two bytes
+			memcpy (buffer_out+HLEN+2+2+2, &sbz, 2);
+			
+			//append value for next 4 bytes
+			memcpy (buffer_out+HLEN+2+2+2+2, &keyvalue, 4); 
+			
+			if (send(peer_sock, (void *) buffer_out, HLEN + payloadlength, 0) < 0)
+			{
+				perror ("Failed to send QHIT");
+			}
+			else
+			{	
+				flag_found = 1;
+				fprintf (log_file, "--> QHIT %x to %s\n", keyvalues[i], ip);
+			}
+			break;
+		}
+	}
+	
+	if (flag_found == 0)
+	{
+		fprintf (log_file, "No key-value pair found for query key %s\n", key_input);
+	}
 	
 }
 
