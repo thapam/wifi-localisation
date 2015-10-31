@@ -24,17 +24,13 @@ USAGE GUIDELINES
 	connect 130.233.195.30 6346
 	connect 130.233.195.31 6346
 	connect 130.233.195.32 6346
-	
 2) To view the peers connected to the node, use the "peers" command
 	peers
-
 3) To query the network for key value pairs, use the "query" command and specify the query key. Query hits will be displayed.
 	query commonkey
-
 4) To find neighbors of a connected node use the "pingb" command specifying ip and port. The application will return the list of neighbors of the node.
 Check the peers command to get list of connected peers.
 	pingb 130.233.195.30 6346
-
 5) To disconnect from all peers and exit the application use the "bye" command.
 	bye
 
