@@ -365,8 +365,6 @@ int main(int argc , char *argv[])
 				
 			}
 		}
-	
-		fclose(log_file);
 		
 		/* Every 5 second logic */
 		curr_time = time (NULL);
@@ -383,6 +381,8 @@ int main(int argc , char *argv[])
 			
 			old_time = curr_time;
 		}
+		
+		fclose(log_file);
 		
 	}
 	
@@ -421,7 +421,7 @@ void send_ping (int peer_sock, uint8_t ttl)
 	//Build the ping msg
 	msg_ping_send_head.version = 1;
 	msg_ping_send_head.ttl = ttl;
-
+	msg_ping_send_head.msg_type = MSG_PING;
 	msg_ping_send_head.reserved = 0;
 	msg_ping_send_head.org_port = htons(PORT);
 	msg_ping_send_head.length = htons(0);
@@ -437,8 +437,9 @@ void send_ping (int peer_sock, uint8_t ttl)
 	{
 		//send successfull log to file
 		get_sock_ip (peer_sock, ip);
-		if (ttl == 1)
+		if (ttl == 1) {
 			fprintf (log_file, "--> PING (A) (msg id: %u) to %s\n", hash, ip);
+		}
 		else 
 			fprintf (log_file, "--> PING (B) (msg id: %u) to %s\n", hash, ip);
 	}

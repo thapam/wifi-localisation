@@ -45,3 +45,9 @@ This includes:
  
  Incoming messages are marked as "<--" while outgoing messages are logged as "-->". View the cat command to view the log file.
  	cat log.txt
+ 
+ 
+ For querying this node from other nodes, we have published three key-value pairs
+ 	1) "commonkey":0x110A5150
+ 	2) "group20key":0x20
+ 	3) "lostkey":0x666
