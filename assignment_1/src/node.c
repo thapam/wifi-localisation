@@ -12,8 +12,6 @@ Manish Thapa (534398)
 */
 
 
-
-
 #define MAX_PEERS 15
 
 #include <stdio.h>
@@ -27,48 +25,63 @@ Manish Thapa (534398)
 #include <arpa/inet.h> //inet_addr
 #include "p2p.h"
 
+
+/* MESSAGE HANDLERS */
 void peer_handler (int peer_sock);
-int connect_peer (char *ip_address, int port);
 void handle_ping(int peer_sock, char *buffer);
 void handle_join(int peer_sock, char *buffer);
-char * get_my_ip ();
-void get_sock_ip (int sock, char *ip);
-uint32_t get_message_id();
-void send_query(char *query);
 void handle_qhit(int peer_sock, char *buffer);
 void handle_query(int peer_sock, char *buffer);
-void send_ping (int peer_sock, uint8_t ttl);
 void handle_pong(int peer_sock, char *buffer);
 
+
+/* MESSAGE SENDERS */
+void send_query(char *query);
+void send_ping (int peer_sock, uint8_t ttl);
+
+/* CONNECT PEER */
+int connect_peer (char *ip_address, int port);
+
+/* Misc Functions */
+char * get_my_ip ();
+int get_sock_ip (int sock, char *ip);
+uint32_t get_message_id();
+void display_menu ();
+
+/* Global Section Start */
 char *own_ip;
 int peer_socks[MAX_PEERS] = {0};
 
 FILE *log_file;
 int PORT;
 
+/* Global section end */
+
+
+
 int main(int argc , char *argv[])
 {
-	struct in_addr addr;
+	//Time variables
 	struct timeval tv;
-	
 	time_t old_time, curr_time;
 	
-	char user_input_buff[1024];
+	char user_input_buff[1024]; //buffer for storing user input commands
 	
-/*--------------------------------------------------*/
+ 	//Listener and peer sockets
 	int listener_sock, max_sock, sock, peer_sock1;
 	
 	struct sockaddr_in listener_addr, peer_addr;
+	struct in_addr addr;
 	
-	int i, max_peers = MAX_PEERS;	
+	int i, max_peers = MAX_PEERS;
+		
 	int activity;
 
 	unsigned int addrlen;
 	
 	/* Socket set to handle multiple sockets*/
 	fd_set readfds;
-/*--------------------------------------------------*/
-
+ 
 	//initialize port variable to first argument
 	if (argc == 2)
 	{
@@ -112,18 +125,16 @@ int main(int argc , char *argv[])
 	}
 	
 	printf ("Node is listening on port %d\n", PORT);
-		
-	//now connect to one peer
 	
-	//peer_socks[0] = connect_peer ("130.233.195.30", 6346);
-	
-	//loop indifinitely thru all sockets
+	display_menu ();
 	
 	old_time = time (NULL);
 	
+	//Looping indifinitely thru all file descriptors
+	//take appropriate action upon set
+	
 	while (1)
 	{
-			
 		log_file = fopen ("log.txt", "a");
 		
 		//clear socket set
@@ -184,7 +195,7 @@ int main(int argc , char *argv[])
 			
 		}
 		
-		//check other FDs. if set it means activity has happened
+		//check other peer sockets connected. if set it means activity has happened
 		for (i = 0; i < max_peers; i++)
 		{
 			if (FD_ISSET(peer_socks[i], &readfds) && peer_socks[i] != 0)
@@ -212,9 +223,10 @@ int main(int argc , char *argv[])
 				{
 				
 					cmd = strtok (command, delim);
-/* COMMAND TO BE PROCESSED*/			
-					if (strcmp (cmd, "exit") == 0)
+/* COMMAND LINE implementation below */			
+					if (strcmp (cmd, "bye") == 0)
 					{
+						printf ("Moi Moi! Disconnected from all sockets\n\n");
 						exit (0);
 					}
 	
@@ -222,12 +234,13 @@ int main(int argc , char *argv[])
 					else if (strcmp (cmd, "peers") == 0) 
 					{
 						int is_present = 0;
+						uint16_t port;
 						for (i = 0; i < MAX_PEERS; i++)
 						{
 							if (peer_socks[i] > 0)
 							{
-								get_sock_ip (peer_socks[i], ip_str);
-								printf ("%s\n", ip_str);
+								port = get_sock_ip (peer_socks[i], ip_str);
+								printf ("%s\t%u\n", ip_str, port);
 								is_present = 1;
 							}
 						}
@@ -238,7 +251,7 @@ int main(int argc , char *argv[])
 						}
 					}
 
-					//query ip_addr
+					//query <query string>
 					else if (strcmp (cmd, "query") == 0)
 					{
 						arg1 = strtok(NULL, delim); //query string
@@ -252,15 +265,12 @@ int main(int argc , char *argv[])
 						}
 					}
 				
-
+					//connect ip_addr port
 					else if (strcmp (cmd, "connect") == 0)
 					{
-						//printf ("Command - %s\n", cmd);
-						arg1 = strtok (NULL, " "); //IP_ADDRESS of peer to be connected
+						arg1 = strtok (NULL, " "); //IP_ADDRESS is first argument
 						if (arg1 != NULL) 
-						{
-						//	printf ("Command - %s\n", arg1);
-						
+						{						
 							arg2 = strtok (NULL, " ");
 							if (arg2 != NULL) 
 							{
@@ -291,32 +301,54 @@ int main(int argc , char *argv[])
 						}
 					}
 					
+					//pingb ip_addr port
 					else if (strcmp (cmd, "pingb") == 0)
 					{
 						char ip[16];
+						uint16_t port;
+						
+						int found = 0;
 						
 						arg1 = strtok(NULL, delim); //Ip address string
 						if (arg1 != NULL)
 						{
-							for (i = 0; i < MAX_PEERS; i++)
+							arg2 = strtok (NULL, " ");
+							if (arg2 != NULL) 
 							{
-								get_sock_ip (peer_socks[i], ip);
-								if (strcmp (arg1, ip) == 0) //if ip is found
+								for (i = 0; i < MAX_PEERS; i++)
 								{
-									send_ping (peer_socks[i], 5); //send type B ping (ttl 5)
-									break;
+									port = get_sock_ip (peer_socks[i], ip);
+									if (strcmp (arg1, ip) == 0) //if ip is found
+									{
+										if (port == atoi(arg2))
+										{
+											send_ping (peer_socks[i], 5); //send type B ping (ttl 5)
+											found = 1;
+											break;
+										}
+									}
 								}
+								if (found == 0)
+								{
+									printf ("IP Port combination not found in connected peers. Use command 'peers' to verify\n");
+								}
+							}
+							else
+							{
+								printf ("Please provide port. Format - pingb <ip> <port>\n");
 							}
 						}
 						else
 						{
-							printf ("Please provide ip address. Format - pingb <ip>\n");
+							printf ("Please provide ip address. Format - pingb <ip> <port>\n");
 						}
 					}
 					
+					//Unknown command
 					else 
 					{
 						printf ("Unknown command\n");
+						display_menu ();
 					}
 				
 
@@ -357,6 +389,26 @@ int main(int argc , char *argv[])
 	return 0;
 }
 
+/* Display the menu */
+void display_menu () 
+{
+	puts ("\n ** The ultimate Gnutella p2p node - by group20 **");
+	puts ("Commands supported");
+	puts (" - connect <ip> <port>");
+	puts (" - peers");
+	puts (" - query <key>");
+	puts (" - pingb <ip> <port>");
+	puts (" - bye\n");
+}
+
+
+
+/* 
+Function name: send_ping
+Sends ping A or ping B message to the specified socket
+Accepts: peer_socket, time to live
+Returns: nothing
+*/
 void send_ping (int peer_sock, uint8_t ttl) 
 {
 	int i;
@@ -392,6 +444,13 @@ void send_ping (int peer_sock, uint8_t ttl)
 	}
 }
 
+
+/*
+Function: connect_peer
+Connect to the specified peer. If successful return socket number.
+Accepts: ip address, port
+Returns: socket number of connected peer
+*/
 int connect_peer (char *ip_address, int port)
 {
 	struct in_addr addr;
@@ -509,6 +568,13 @@ int connect_peer (char *ip_address, int port)
 	return sock_peer;
 }
 
+
+/*
+Function: peer_handler
+Handle the peer socket by checking the message type received and calling appropriate message handler
+Accepts: Socket to the connected peer
+Returns: Nothing
+*/
 void peer_handler (int peer_sock)
 {
 	struct in_addr addr;
@@ -583,6 +649,13 @@ void peer_handler (int peer_sock)
 	}
 }
 
+
+/*
+Function: handle_pong
+Handle PONG message type. Log the PONG message and display the list of neighbours if PONG B received.
+Accepts: peer socket, buffer which contains the message
+Returns: nothing
+*/
 void handle_pong(int peer_sock, char *buffer) 
 {
 	int i;
@@ -628,7 +701,7 @@ void handle_pong(int peer_sock, char *buffer)
 			//build the ip to string
 			addr.s_addr = (uint32_t) pong_entry.ip;
 			
-			printf ("IP - %s, Port - %u\n", inet_ntoa(addr), ntohs(pong_entry.port));
+			printf ("IP - %s\tPort - %u\n", inet_ntoa(addr), ntohs(pong_entry.port));
 			
 			ptr_entry += 8; //point to the next entry
 		}
@@ -637,7 +710,14 @@ void handle_pong(int peer_sock, char *buffer)
 
 }
 
-void get_sock_ip (int sock, char *ip)
+
+/*
+Function: get_sock_ip
+Stores the IP address of the socket specified in the character variable and returns the port.
+Accepts: Socket number, Pointer to the IP address variable
+Returns: Port of the socket
+*/
+int get_sock_ip (int sock, char *ip)
 {
 	//char *ip;
 	
@@ -648,8 +728,9 @@ void get_sock_ip (int sock, char *ip)
 	
         sprintf(ip, "%s", inet_ntoa(peer_addr.sin_addr));
         
-        //return ip;
+        return ntohs(peer_addr.sin_port);
 }
+
 
 /* Function to calculate the adler32 hash adapted from wikipedia adler32 hash description */
 uint32_t get_message_id() 
@@ -701,9 +782,16 @@ char * get_my_ip ()
 
 }
 
+/*  
+Function: handle_ping
+Handle the ping message. If PING A received, send PONG A. For PING B send PONG B specifying the list of neighbors.
+Accepts: Peer socket, buffer which contains the message
+Returns: nothing
+*/
 void handle_ping(int peer_sock, char *buffer)
 {
-
+	int i;
+	
 	struct in_addr addr;
 	
 	//structure for message header
@@ -715,7 +803,7 @@ void handle_ping(int peer_sock, char *buffer)
 	
 	msg_head = *((struct P2P_h *) buffer);
 	
-	//log that ping received from a peer
+	//store that ping received from a peer
 	addr.s_addr = (uint32_t) msg_head.org_ip;
 	
 	if (msg_head.ttl == PING_TTL_HB) 
@@ -723,12 +811,12 @@ void handle_ping(int peer_sock, char *buffer)
 		//Type A ping, respond with Type A pong
 		fprintf (log_file, "<-- PING (A) (msg id: %u) from %s\n", ntohl(msg_head.msg_id), inet_ntoa(addr));
 		
-		//Build the type B pong message
+		//Build the type A pong message
 		msg_pong_send_head.version = 1;
-		msg_pong_send_head.ttl = PING_TTL_HB;	//heart beat pong
+		msg_pong_send_head.ttl = PING_TTL_HB;	//pong message will have ttl 1
 		msg_pong_send_head.msg_type = MSG_PONG;
 		msg_pong_send_head.reserved = 0;
-		msg_pong_send_head.org_port = htons(6346);
+		msg_pong_send_head.org_port = htons(PORT);
 		msg_pong_send_head.length = htons(0);
 		msg_pong_send_head.org_ip = inet_addr(own_ip);
 		msg_pong_send_head.msg_id = msg_head.msg_id;
@@ -749,11 +837,101 @@ void handle_ping(int peer_sock, char *buffer)
 		//To-DO
 		//Send PONG B reply here
 		
-		fprintf (log_file, "--> PONG (B) (msg id: %u) to %s \n", ntohl(msg_head.msg_id), inet_ntoa(addr));
+		struct in_addr addr_peer;
+			
+		uint16_t payloadlen;
+		uint16_t num_entries;
+		
+		uint16_t port;
+		
+		struct P2P_pong_front pong_front;
+		struct P2P_pong_entry pong_entry;
+		
+		char sender_ip[16];
+		char sock_ip[16];
+		
+		char buffer_out[1024];
+		char *ptr_buff;
+		
+		//Build the type B pong message
+		msg_pong_send_head.version = 1;
+		msg_pong_send_head.ttl = PING_TTL_HB;	//pong message will have ttl 1
+		msg_pong_send_head.msg_type = MSG_PONG;
+		msg_pong_send_head.reserved = 0;
+		msg_pong_send_head.org_port = htons(PORT);
+		
+		msg_pong_send_head.org_ip = inet_addr(own_ip);
+		msg_pong_send_head.msg_id = msg_head.msg_id;
+		
+		//initialize ptr to point after HEADER and BODY Front (4 bytes)
+		ptr_buff = buffer_out + HLEN + sizeof (struct P2P_pong_front);
+		
+		num_entries = 0;
+		//find number of neighbours excluding the sender
+		for (i = 0; i < MAX_PEERS; i++)
+		{
+			if (peer_socks[i] != 0)
+			{
+				port = get_sock_ip (peer_socks[i], sock_ip); //get ip of neighbor
+				get_sock_ip (peer_sock, sender_ip); //get ip of sender
+				
+				if (strcmp (sock_ip, sender_ip) != 0) //exclude the sender as a neighbour
+				{
+					//build the entry for pong body
+					pong_entry.ip = inet_addr(sock_ip);
+					pong_entry.port  = htons (port);
+					pong_entry.sbz = 0;
+					
+					//copy the entry into the buffer
+					memcpy (ptr_buff, &pong_entry, sizeof (struct P2P_pong_entry));
+					
+					//point the ptr for start of next entry
+					ptr_buff = ptr_buff + sizeof (struct P2P_pong_entry);
+					
+					//increment the number of neighbours counter //To be used later for calculating payloadlen
+					num_entries++;
+				}
+			}
+		}
+		
+		//build the pong front
+		pong_front.entry_size = htons (num_entries);
+		pong_front.sbz = 0;
+		
+		//write the pong into buffer after header
+		memcpy (buffer_out + HLEN, &pong_front, sizeof (struct P2P_pong_front));
+		
+		
+		//entries have been now written into the buffer
+		
+		//calculate the payload length now
+		//length of payload = length of pong front + (number of entries) * length of each entry
+		payloadlen = sizeof (struct P2P_pong_front) + (num_entries * sizeof (struct P2P_pong_entry));
+		
+		//write payload length to message header
+		msg_pong_send_head.length = htons(payloadlen);
+		
+		//copy message header into the buffer start
+		memcpy (buffer_out, &msg_pong_send_head, HLEN);
+		
+		//send the buffer
+		if(send(peer_sock, buffer_out, HLEN + payloadlen, 0) < 0)
+		{
+			perror("Failed to send: ");
+			exit(-1);
+		}
+		else
+			fprintf (log_file, "--> PONG (B) (msg id: %u) to %s \n", ntohl(msg_head.msg_id), inet_ntoa(addr));
 	}
 }
 
 
+/*
+Function: handle_join
+Handles JOIN message. Accepts the connection and adds to the list of connected peers
+Accepts: Peer socket, buffer containing message
+Returns: nothing
+*/
 void handle_join(int peer_sock, char *buffer)
 {
 	struct in_addr addr;
@@ -809,6 +987,13 @@ void handle_join(int peer_sock, char *buffer)
 	}
 }
 
+
+/*
+Function: send_query
+Send the QUERY message specifying the query string to all connected peers
+Accepts: Query string
+Returns: nothing
+*/
 void send_query(char *query) 
 {
 	int i;
@@ -865,6 +1050,13 @@ void send_query(char *query)
 
 }
 
+
+/*
+Function: handle_qhit
+Handle QHIT message and output the list of key values in the payload.
+Accepts: Peer socket, buffer containing message
+Returns: nothing
+*/
 void handle_qhit(int peer_sock, char *buffer)
 {
 	int i;
@@ -917,6 +1109,13 @@ void handle_qhit(int peer_sock, char *buffer)
 	
 }
 
+
+/*
+Function: handle_query
+Handle the QUERY message. If query is hit, send back QHIT message with matched key value as a payload. Key values are stored in p2p.h header.
+Accepts: Peer socket, buffer containing message
+Returns: nothing
+*/
 void handle_query(int peer_sock, char *buffer) 
 {
 	int i;
